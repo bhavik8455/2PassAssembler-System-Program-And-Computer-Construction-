@@ -1,0 +1,260 @@
+Sure! This code implements a **Two-Pass Assembler** in Python for a hypothetical assembly language. It converts assembly code into an intermediate and machine-level representation while maintaining symbol, literal, and pool tables.
+
+---
+
+## **Code Breakdown**
+
+### **1. Importing Required Modules**
+```python
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
+from tabulate import tabulate
+from collections import defaultdict
+```
+- `dataclass`: Provides a structured way to store the assembler’s instruction sets and tables.
+- `field`: Used with `dataclass` to define default values for dictionaries.
+- `Dict, List, Tuple`: Type hints for function arguments and return types.
+- `tabulate`: Used to print formatted tables.
+- `defaultdict`: Provides default values for dictionaries (though not used here explicitly).
+
+---
+
+### **2. Defining the `Assembler` Class**
+```python
+@dataclass
+class Assembler:
+```
+This class encapsulates all the functionalities needed to process an assembly program.
+
+---
+
+### **3. Defining Mnemonic Opcode Tables (MOT, POT, DL, Registers)**
+```python
+mot: Dict[str, str] = field(default_factory=lambda: {
+    'STOP': '00', 'ADD': '01', 'SUB': '02', 'MULT': '03', 'MOVER': '04',
+    'MOVEM': '05', 'COMP': '06', 'BC': '07', 'DIV': '08', 'READ': '09', 'PRINT': '10'
+})
+```
+- **Machine Opcode Table (MOT)**: Maps instruction mnemonics (e.g., `ADD`, `STOP`) to their opcode values.
+
+```python
+pot: Dict[str, str] = field(default_factory=lambda: {
+    'START': '01', 'END': '02', 'ORIGIN': '03', 'EQU': '04', 'LTORG': '05'
+})
+```
+- **Pseudo Opcode Table (POT)**: Stores directives like `START`, `END`, `LTORG`, etc.
+
+```python
+dl: Dict[str, str] = field(default_factory=lambda: {'DC': '01', 'DS': '02'})
+```
+- **Declarative Statements (DL)**: `DC` (Define Constant) and `DS` (Define Storage).
+
+```python
+registers: Dict[str, str] = field(default_factory=lambda: {
+    'AREG': '01', 'BREG': '02', 'CREG': '03', 'DREG': '04'
+})
+```
+- **Registers Table**: Maps register names to codes.
+
+---
+
+### **4. Initializing Data Structures**
+```python
+def __post_init__(self):
+    self.address = 0
+    self.symbol_table = {}
+    self.literal_table = {}
+    self.duplicate_literals = {}
+    self.pool_table = []
+```
+- `address`: Tracks the memory location.
+- `symbol_table`: Stores user-defined labels and variables.
+- `literal_table`: Stores literals (e.g., `=5`).
+- `duplicate_literals`: Tracks duplicate literals.
+- `pool_table`: Keeps track of literal pools.
+
+---
+
+### **5. Processing Instructions**
+```python
+def parse_instruction(self, statement: str) -> Tuple[str, str]:
+```
+This function analyzes each line of assembly code.
+
+---
+
+#### **Handling `START`**
+```python
+if 'START' in parts[0]:
+    self.address = int(parts[1])
+    return statement, f"(AD,{self.pot['START']}) - (C, {self.address})"
+```
+- `START` sets the starting address of the program.
+
+---
+
+#### **Handling `END`**
+```python
+if parts[0] == 'END':
+    output_lines, self.address = self.allocate_literals(self.pot['END'])
+    return statement, output_lines or f"{self.address} (AD,{self.pot['END']}) - -"
+```
+- `END` processes any remaining literals using `allocate_literals()`.
+
+---
+
+#### **Handling `LTORG`**
+```python
+if parts[0] == 'LTORG':
+    output_lines, self.address = self.allocate_literals(self.pot['LTORG'])
+    return statement, output_lines
+```
+- `LTORG` loads literals into memory immediately.
+
+---
+
+#### **Handling `ORIGIN` (Address Modification)**
+```python
+if parts[0] == 'ORIGIN':
+    self.address = self.evaluate_expression(parts[1])
+    return statement, ''
+```
+- Changes the current memory address.
+
+---
+
+#### **Handling `EQU` (Symbol Definition)**
+```python
+if len(parts) > 1 and parts[1] == 'EQU':
+    self.symbol_table[parts[0]] = str(self.evaluate_expression(parts[2]))
+    return statement, ''
+```
+- Defines a symbol equivalent to an expression.
+
+---
+
+#### **Handling Data Declarations (`DS` and `DC`)**
+```python
+if parts[0] in self.dl or (len(parts) > 1 and parts[1] in self.dl):
+    return self.handle_declaration(parts)
+```
+- Calls `handle_declaration()` for `DS` (storage allocation) and `DC` (constant definition).
+
+---
+
+### **6. Handling Data Declarations**
+```python
+def handle_declaration(self, parts: List[str]) -> Tuple[str, str]:
+```
+- If the declaration involves a literal (e.g., `=5`), it's stored in `literal_table`.
+
+---
+
+### **7. Handling Regular Instructions**
+```python
+def handle_regular_instruction(self, parts: List[str]) -> Tuple[str, str]:
+```
+- Handles normal instructions like `MOVER`, `ADD`, `MULT`, etc.
+- Determines if operands are symbols or literals.
+
+---
+
+### **8. Managing Literals**
+```python
+def add_literal(self, literal: str) -> int:
+```
+- Adds a literal to `literal_table` and returns its index.
+
+---
+
+### **9. Evaluating Expressions**
+```python
+def evaluate_expression(self, expr: str) -> int:
+```
+- Evaluates expressions like `B+2`.
+
+---
+
+### **10. Allocating Literals**
+```python
+def allocate_literals(self, end_value: str) -> Tuple[str, int]:
+```
+- Assigns memory locations to literals.
+
+---
+
+### **11. Pass 1 - Intermediate Code Generation**
+```python
+def pass1(self, assembly_code: str) -> List[Tuple[str, str]]:
+```
+- Transforms assembly code into an intermediate representation.
+
+---
+
+### **12. Pass 2 - Machine Code Generation**
+```python
+def pass2(self, pass1_output: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
+```
+- Replaces symbolic addresses with actual memory addresses.
+
+---
+
+### **13. Displaying Results**
+```python
+def display_combined_output(pass1_output: List[Tuple[str, str]], 
+                            pass2_output: List[Tuple[str, str]]) -> None:
+```
+- Displays source, intermediate, and machine code.
+
+```python
+def display_tables(assembler: Assembler) -> None:
+```
+- Prints symbol table, literal table, and pool table.
+
+---
+
+### **14. Running the Assembler**
+```python
+def run_assembler(code: str) -> None:
+    assembler = Assembler()
+    pass1_output = assembler.pass1(code)
+    pass2_output = assembler.pass2(pass1_output)
+    display_combined_output(pass1_output, pass2_output)
+    display_tables(assembler)
+```
+- Executes both passes and prints the results.
+
+---
+
+### **15. Main Program Execution**
+```python
+if __name__ == "__main__":
+    assembly_code = '''START 200
+MOVER AREG, '=5'
+MOVER BREG, '=1'
+MOVEM BREG, A
+LTORG
+MOVER CREG, '=3'
+MOVER DREG, '=1'
+ADD CREG, B
+LTORG
+MOVER BREG, '=5'
+MULT BREG, A
+PRINT A
+STOP 
+A DS 1
+B DC 2
+END'''
+    run_assembler(assembly_code)
+```
+- Defines an assembly program and runs the assembler.
+
+---
+
+## **Summary**
+1. **Pass 1** creates intermediate code and symbol/literal tables.
+2. **Pass 2** generates final machine code.
+3. **Tables** store symbols, literals, and pools.
+4. **Output** is displayed in tabular format.
+
+This program simulates how an assembler processes assembly code into machine code. 🚀
