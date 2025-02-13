@@ -277,7 +277,7 @@ def display_tables(assembler: Assembler) -> None:
     
     if assembler.pool_table:
         print('\nPool Table:')
-        pool_tab = [(i+1, entry) for i, entry 
+        pool_tab = [(i+1,f"#{entry}") for i, entry 
                    in enumerate(assembler.pool_table)]
         print(tabulate(pool_tab, 
                       headers=["Index", "Literal Number"], 
