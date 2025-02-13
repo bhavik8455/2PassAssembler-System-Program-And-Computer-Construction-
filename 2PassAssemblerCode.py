@@ -23,37 +23,63 @@ class Assembler:
         self.literal_table = {}
         self.duplicate_literals = {}
         self.pool_table = []
-        
+    
+    def process_label(self, statement: str) -> Tuple[str, str]:
+        # Split on colon and strip whitespace
+        parts = [part.strip() for part in statement.split(':')]
+        if len(parts) > 1:
+            label = parts[0]
+            rest = parts[1]
+            # Add label to symbol table with current address
+            self.symbol_table[label] = str(self.address)
+            return rest
+        return statement
+    
     def parse_instruction(self, statement: str) -> Tuple[str, str]:
+        # First check for and process any labels
+        original_statement = statement
+        statement = self.process_label(statement)
+        
         parts = statement.replace(',', ' ').split()
         
         if not parts:
-            return statement, ''
+            return original_statement, ''
             
         if 'START' in parts[0]:
             self.address = int(parts[1])
-            return statement, f"(AD,{self.pot['START']}) - (C, {self.address})"
+            return original_statement, f"(AD,{self.pot['START']}) - (C, {self.address})"
             
         if parts[0] == 'END':
             output_lines, self.address = self.allocate_literals(self.pot['END'])
-            return statement, output_lines or f"{self.address} (AD,{self.pot['END']}) - -"
+            return original_statement, output_lines or f"{self.address} (AD,{self.pot['END']}) - -"
             
         if parts[0] == 'LTORG':
             output_lines, self.address = self.allocate_literals(self.pot['LTORG'])
-            return statement, output_lines
+            return original_statement, output_lines
             
         if parts[0] == 'ORIGIN':
-            self.address = self.evaluate_expression(parts[1])
-            return statement, ''
+            try:
+                # Try to evaluate the expression
+                expr = ' '.join(parts[1:])
+                self.address = self.evaluate_expression(expr)
+                return original_statement, f"(AD,{self.pot['ORIGIN']}) - (C, {self.address})"
+            except Exception as e:
+                print(f"Error evaluating ORIGIN expression: {e}")
+                return original_statement, ''
             
         if len(parts) > 1 and parts[1] == 'EQU':
-            self.symbol_table[parts[0]] = str(self.evaluate_expression(parts[2]))
-            return statement, ''
+            try:
+                value = self.evaluate_expression(' '.join(parts[2:]))
+                self.symbol_table[parts[0]] = str(value)
+                return original_statement, f"(AD,{self.pot['EQU']}) - (C, {value})"
+            except Exception as e:
+                print(f"Error evaluating EQU expression: {e}")
+                return original_statement, ''
             
         if parts[0] in self.dl or (len(parts) > 1 and parts[1] in self.dl):
             return self.handle_declaration(parts)
             
-        return self.handle_regular_instruction(parts)
+        return self.handle_regular_instruction(parts, original_statement)
     
     def handle_declaration(self, parts: List[str]) -> Tuple[str, str]:
         if len(parts) == 3:
@@ -76,11 +102,11 @@ class Assembler:
             
         return ' '.join(parts), output
     
-    def handle_regular_instruction(self, parts: List[str]) -> Tuple[str, str]:
+    def handle_regular_instruction(self, parts: List[str], original_statement: str) -> Tuple[str, str]:
         if len(parts) == 1 and parts[0] == 'STOP':
             output = f"{self.address} (IS,{self.mot['STOP']}) - -"
             self.address += 1
-            return 'STOP', output
+            return original_statement, output
             
         if len(parts) > 2 and parts[1] in self.mot:
             self.symbol_table[parts[0]] = str(self.address)
@@ -109,7 +135,7 @@ class Assembler:
                 output = f"{self.address} (IS,{mot_code}) {reg} (S,{sym_index})"
                 
         self.address += 1
-        return ' '.join(parts), output
+        return original_statement, output
     
     def add_literal(self, literal: str) -> int:
         if literal in self.literal_table:
@@ -125,10 +151,25 @@ class Assembler:
         try:
             return int(expr)
         except ValueError:
+            # Replace symbols with their values
+            modified_expr = expr
             for symbol, value in self.symbol_table.items():
                 if symbol in expr and value:
-                    expr = expr.replace(symbol, value)
-            return eval(expr)
+                    modified_expr = modified_expr.replace(symbol, value)
+            # Handle simple addition/subtraction
+            parts = modified_expr.split()
+            if len(parts) == 3 and parts[1] in ['+', '-']:
+                try:
+                    left = int(parts[0])
+                    right = int(parts[2])
+                    if parts[1] == '+':
+                        return left + right
+                    else:
+                        return left - right
+                except ValueError:
+                    raise ValueError(f"Unable to evaluate expression: {expr}")
+            else:
+                return int(modified_expr)
     
     def allocate_literals(self, end_value: str) -> Tuple[str, int]:
         if not self.literal_table:
@@ -167,25 +208,44 @@ class Assembler:
                 
             if isinstance(intermediate, list):
                 intermediate = '\n'.join(intermediate)
-                
+            
+            # Extract location counter
+            lc = intermediate.split()[0] if intermediate.split() else ''
+            
+            # Handle literals and symbols
             if '(S,' in intermediate or '(L,' in intermediate:
                 parts = intermediate.split()
                 if len(parts) >= 4:
+                    # Get the type (S or L) and index
                     table_type, index = parts[3].strip('()').split(',')
                     index = int(index) - 1
                     
+                    # Get the actual address from appropriate table
                     if table_type == 'S':
-                        lc = list(self.symbol_table.values())[index]
+                        address = list(self.symbol_table.values())[index]
                     else:
-                        lc = list(self.literal_table.values())[index]
-                        
-                    machine_code.append((statement, 
-                                      f"{parts[0]} {' '.join(parts[1:3])} {lc}"))
+                        address = list(self.literal_table.values())[index]
+                    
+                    # Build machine code without any brackets
+                    if len(parts) >= 3:
+                        # For instructions with register
+                        machine_code.append((statement, 
+                                          f"{lc} {parts[1].split(',')[1].strip(')')} {parts[2].strip('()')} {address}"))
+                    else:
+                        # For instructions without register
+                        machine_code.append((statement, 
+                                          f"{lc} {parts[1].split(',')[1].strip(')')} - {address}"))
                 else:
-                    machine_code.append((statement, intermediate))
+                    # Handle simpler cases
+                    cleaned = ' '.join(part.split(',')[1].strip('()')
+                                     if ',' in part else part.strip('()')
+                                     for part in intermediate.split())
+                    machine_code.append((statement, cleaned))
             else:
-                cleaned = ''.join(c for c in intermediate 
-                                if c.isdigit() or c.isspace() or c == '-')
+                # Handle other cases (START, STOP, etc.)
+                cleaned = ' '.join(part.split(',')[1].strip('()')
+                                 if ',' in part else part.strip('()')
+                                 for part in intermediate.split())
                 machine_code.append((statement, cleaned))
                 
         return machine_code
@@ -196,7 +256,7 @@ def display_combined_output(pass1_output: List[Tuple[str, str]],
     for (source, intermediate), (_, machine) in zip(pass1_output, pass2_output):
         combined_output.append([source, intermediate, machine])
     
-    print('\n 2 Pass Assembly Output:')
+    print('\nCombined Assembly Output:')
     print(tabulate(combined_output, 
                   headers=["Source Code", "Intermediate Code", "Machine Code"], 
                   tablefmt="grid"))
@@ -235,20 +295,17 @@ def run_assembler(code: str) -> None:
 if __name__ == "__main__":
     assembly_code = '''START 200
 MOVER AREG, '=5'
-MOVER BREG, '=1'
-MOVEM BREG, A
+MOVEM AREG, X
+L1: MOVER BREG, '=2'
+ORIGIN L1 + 3
 LTORG
-MOVER CREG, '=3'
-MOVER DREG, '=1'
-ADD CREG, B
+NEXT: ADD AREG,'=1'
+SUB BREG,'=2'
 LTORG
-MOVER BREG, '=5'
-MULT BREG, A
-PRINT A
-STOP 
-A DS 1
-B DC 2
+BACK EQU L1
+MULT CREG, '=4'
+STOP
+X DS 1
 END'''
 
     run_assembler(assembly_code)
-
