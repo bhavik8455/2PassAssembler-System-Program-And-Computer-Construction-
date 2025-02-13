@@ -194,7 +194,7 @@ class Assembler:
     
     def pass2(self, pass1_output: List[Tuple[str, str]]) -> List[Tuple[str, str]]:
         machine_code = []
-        
+    
         for statement, intermediate in pass1_output:
             if not intermediate:
                 machine_code.append((statement, ''))
@@ -202,6 +202,19 @@ class Assembler:
                 
             if isinstance(intermediate, list):
                 intermediate = '\n'.join(intermediate)
+            
+            # Handle END statement with multiple lines
+            if 'END' in statement and '\n' in intermediate:
+                lines = intermediate.split('\n')
+                formatted_lines = []
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 4:  # Has format "address (AD,02) - value"
+                        addr = parts[0]
+                        value = parts[-1]
+                        formatted_lines.append(f"{addr} 02 - {value}")
+                machine_code.append((statement, '\n'.join(formatted_lines)))
+                continue
             
             lc = intermediate.split()[0] if intermediate.split() else ''
             
@@ -218,19 +231,19 @@ class Assembler:
                     
                     if len(parts) >= 3:
                         machine_code.append((statement, 
-                                          f"{lc} {parts[1].split(',')[1].strip(')')} {parts[2].strip('()')} {address}"))
+                                        f"{lc} {parts[1].split(',')[1].strip(')')} {parts[2].strip('()')} {address}"))
                     else:
                         machine_code.append((statement, 
-                                          f"{lc} {parts[1].split(',')[1].strip(')')} - {address}"))
+                                        f"{lc} {parts[1].split(',')[1].strip(')')} - {address}"))
                 else:
                     cleaned = ' '.join(part.split(',')[1].strip('()')
-                                     if ',' in part else part.strip('()')
-                                     for part in intermediate.split())
+                                    if ',' in part else part.strip('()')
+                                    for part in intermediate.split())
                     machine_code.append((statement, cleaned))
             else:
                 cleaned = ' '.join(part.split(',')[1].strip('()')
-                                 if ',' in part else part.strip('()')
-                                 for part in intermediate.split())
+                                if ',' in part else part.strip('()')
+                                for part in intermediate.split())
                 machine_code.append((statement, cleaned))
                 
         return machine_code
