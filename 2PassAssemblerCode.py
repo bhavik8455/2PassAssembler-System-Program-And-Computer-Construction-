@@ -25,18 +25,15 @@ class Assembler:
         self.pool_table = []
     
     def process_label(self, statement: str) -> Tuple[str, str]:
-        # Split on colon and strip whitespace
         parts = [part.strip() for part in statement.split(':')]
         if len(parts) > 1:
             label = parts[0]
             rest = parts[1]
-            # Add label to symbol table with current address
             self.symbol_table[label] = str(self.address)
             return rest
         return statement
     
     def parse_instruction(self, statement: str) -> Tuple[str, str]:
-        # First check for and process any labels
         original_statement = statement
         statement = self.process_label(statement)
         
@@ -59,10 +56,9 @@ class Assembler:
             
         if parts[0] == 'ORIGIN':
             try:
-                # Try to evaluate the expression
                 expr = ' '.join(parts[1:])
                 self.address = self.evaluate_expression(expr)
-                return original_statement, f"(AD,{self.pot['ORIGIN']}) - (C, {self.address})"
+                return original_statement, ''
             except Exception as e:
                 print(f"Error evaluating ORIGIN expression: {e}")
                 return original_statement, ''
@@ -71,7 +67,7 @@ class Assembler:
             try:
                 value = self.evaluate_expression(' '.join(parts[2:]))
                 self.symbol_table[parts[0]] = str(value)
-                return original_statement, f"(AD,{self.pot['EQU']}) - (C, {value})"
+                return original_statement, ''
             except Exception as e:
                 print(f"Error evaluating EQU expression: {e}")
                 return original_statement, ''
@@ -151,12 +147,10 @@ class Assembler:
         try:
             return int(expr)
         except ValueError:
-            # Replace symbols with their values
             modified_expr = expr
             for symbol, value in self.symbol_table.items():
                 if symbol in expr and value:
                     modified_expr = modified_expr.replace(symbol, value)
-            # Handle simple addition/subtraction
             parts = modified_expr.split()
             if len(parts) == 3 and parts[1] in ['+', '-']:
                 try:
@@ -209,40 +203,31 @@ class Assembler:
             if isinstance(intermediate, list):
                 intermediate = '\n'.join(intermediate)
             
-            # Extract location counter
             lc = intermediate.split()[0] if intermediate.split() else ''
             
-            # Handle literals and symbols
             if '(S,' in intermediate or '(L,' in intermediate:
                 parts = intermediate.split()
                 if len(parts) >= 4:
-                    # Get the type (S or L) and index
                     table_type, index = parts[3].strip('()').split(',')
                     index = int(index) - 1
                     
-                    # Get the actual address from appropriate table
                     if table_type == 'S':
                         address = list(self.symbol_table.values())[index]
                     else:
                         address = list(self.literal_table.values())[index]
                     
-                    # Build machine code without any brackets
                     if len(parts) >= 3:
-                        # For instructions with register
                         machine_code.append((statement, 
                                           f"{lc} {parts[1].split(',')[1].strip(')')} {parts[2].strip('()')} {address}"))
                     else:
-                        # For instructions without register
                         machine_code.append((statement, 
                                           f"{lc} {parts[1].split(',')[1].strip(')')} - {address}"))
                 else:
-                    # Handle simpler cases
                     cleaned = ' '.join(part.split(',')[1].strip('()')
                                      if ',' in part else part.strip('()')
                                      for part in intermediate.split())
                     machine_code.append((statement, cleaned))
             else:
-                # Handle other cases (START, STOP, etc.)
                 cleaned = ' '.join(part.split(',')[1].strip('()')
                                  if ',' in part else part.strip('()')
                                  for part in intermediate.split())
@@ -293,19 +278,18 @@ def run_assembler(code: str) -> None:
     display_tables(assembler)
 
 if __name__ == "__main__":
-    assembly_code = '''START 200
-MOVER AREG, '=5'
-MOVEM AREG, X
-L1: MOVER BREG, '=2'
-ORIGIN L1 + 3
-LTORG
-NEXT: ADD AREG,'=1'
-SUB BREG,'=2'
-LTORG
-BACK EQU L1
-MULT CREG, '=4'
+    assembly_code = '''START 100
+A DS 3
+L1: MOVER AREG, B
+ADD AREG, C
+MOVEM AREG, D
+D EQU A + 1
+L2: PRINT D
+ORIGIN A - 1
+C  DC '=5'
+ORIGIN L2 + 1
 STOP
-X DS 1
+B DC '=19'
 END'''
 
     run_assembler(assembly_code)
